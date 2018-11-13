@@ -3,6 +3,7 @@ package public
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	pb "github.com/linkerd/linkerd2/controller/gen/public"
 	"github.com/linkerd/linkerd2/pkg/k8s"
@@ -13,6 +14,7 @@ import (
 const (
 	routeReqQuery             = "sum(increase(route_response_total%s[%s])) by (rt_route, classification, tls)"
 	routeLatencyQuantileQuery = "histogram_quantile(%s, sum(irate(route_response_latency_ms_bucket%s[%s])) by (le, rt_route))"
+	dstLabel                  = `dst=~"%s:(\\d+)?"`
 )
 
 func (s *grpcServer) TopRoutes(ctx context.Context, req *pb.TopRoutesRequest) (*pb.TopRoutesResponse, error) {
@@ -136,8 +138,9 @@ func (s *grpcServer) getRouteMetrics(ctx context.Context, req *pb.TopRoutesReque
 	return processRouteMetrics(results), nil
 }
 
-func buildRouteLabels(req *pb.TopRoutesRequest) (labels model.LabelSet) {
+func buildRouteLabels(req *pb.TopRoutesRequest) string {
 	// labels: the labels for the resource we want to query for
+	var labels model.LabelSet
 
 	switch out := req.Outbound.(type) {
 
@@ -149,7 +152,14 @@ func buildRouteLabels(req *pb.TopRoutesRequest) (labels model.LabelSet) {
 		labels = labels.Merge(promQueryLabels(req.Selector.Resource))
 		labels = labels.Merge(promDirectionLabels("inbound"))
 	}
-	return
+
+	pairs := make([]string, 0)
+	for k, v := range labels {
+		pairs = append(pairs, fmt.Sprintf("%s=%q", k, v))
+	}
+	pairs = append(pairs, fmt.Sprintf(dstLabel, req.Selector.Resource.Name))
+
+	return fmt.Sprintf("{%s}", strings.Join(pairs, ", "))
 }
 
 func processRouteMetrics(results []promResult) map[string]*pb.BasicStats {
