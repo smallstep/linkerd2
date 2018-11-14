@@ -204,8 +204,8 @@ func BuildTopRoutesRequest(p StatsRequestParams) (*pb.TopRoutesRequest, error) {
 		window = p.TimeWindow
 	}
 
-	if p.AllNamespaces && p.ResourceName != "" {
-		return nil, errors.New("stats for a resource cannot be retrieved by name across all namespaces")
+	if p.AllNamespaces {
+		return nil, errors.New("all namespaces is not supported for routes request")
 	}
 
 	targetNamespace := p.Namespace
@@ -218,6 +218,9 @@ func BuildTopRoutesRequest(p StatsRequestParams) (*pb.TopRoutesRequest, error) {
 	resourceType, err := k8s.CanonicalResourceNameFromFriendlyName(p.ResourceType)
 	if err != nil {
 		return nil, err
+	}
+	if resourceType != k8s.Service {
+		return nil, errors.New("routes request must target a service")
 	}
 
 	topRoutesRequest := &pb.TopRoutesRequest{
@@ -232,26 +235,7 @@ func BuildTopRoutesRequest(p StatsRequestParams) (*pb.TopRoutesRequest, error) {
 	}
 
 	if p.ToName != "" || p.ToType != "" || p.ToNamespace != "" {
-		if p.ToNamespace == "" {
-			p.ToNamespace = targetNamespace
-		}
-		if p.ToType == "" {
-			p.ToType = resourceType
-		}
-
-		toType, err := k8s.CanonicalResourceNameFromFriendlyName(p.ToType)
-		if err != nil {
-			return nil, err
-		}
-
-		toResource := pb.TopRoutesRequest_ToResource{
-			ToResource: &pb.Resource{
-				Namespace: p.ToNamespace,
-				Type:      toType,
-				Name:      p.ToName,
-			},
-		}
-		topRoutesRequest.Outbound = &toResource
+		return nil, errors.New("to options are not supported for routes request")
 	}
 
 	if p.FromName != "" || p.FromType != "" || p.FromNamespace != "" {
