@@ -22,6 +22,20 @@ const (
 	StatefulSet           = "statefulset"
 )
 
+// AllResources is a sorted list of all resources defined as constants above.
+var AllResources = []string{
+	Authority,
+	DaemonSet,
+	Deployment,
+	Namespace,
+	Pod,
+	ReplicationController,
+	ReplicaSet,
+	Service,
+	ServiceProfile,
+	StatefulSet,
+}
+
 // resources to query in StatSummary when Resource.Type is "all"
 var StatAllResourceTypes = []string{
 	// TODO: add Namespace here to decrease queries from the web process
@@ -60,7 +74,11 @@ func generateBaseKubernetesApiUrl(schemeHostAndPort string) (*url.URL, error) {
 	return url, nil
 }
 
-func getConfig(fpath, kubeContext string) (*rest.Config, error) {
+// GetConfig returns kubernetes config based on the current environment.
+// If fpath is provided, loads configuration from that file. Otherwise,
+// GetConfig uses default strategy to load configuration from $KUBECONFIG,
+// .kube/config, or just returns in-cluster config.
+func GetConfig(fpath, kubeContext string) (*rest.Config, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if fpath != "" {
 		rules.ExplicitPath = fpath

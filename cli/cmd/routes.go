@@ -224,7 +224,7 @@ func printRouteJson(stats map[string]*routeRow, w *tabwriter.Writer) {
 }
 
 func buildTopRoutesRequest(service string, options *routesOptions) (*pb.TopRoutesRequest, error) {
-	target, err := util.BuildResource(options.namespace, k8s.Service, service)
+	target, err := util.BuildResource(options.namespace, fmt.Sprintf("%s/%s", k8s.Service, service))
 	if err != nil {
 		return nil, err
 	}
