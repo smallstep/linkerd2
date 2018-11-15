@@ -179,3 +179,32 @@ func GenStatSummaryResponse(resName, resType string, resNs []string, counts *Pod
 
 	return resp
 }
+
+func GenTopRoutesResponse(routes []string) pb.TopRoutesResponse {
+	rows := []*pb.RouteTable_Row{}
+	for _, route := range routes {
+		row := &pb.RouteTable_Row{
+			Route: route,
+			Stats: &pb.BasicStats{
+				SuccessCount:    123,
+				FailureCount:    0,
+				LatencyMsP50:    123,
+				LatencyMsP95:    123,
+				LatencyMsP99:    123,
+				TlsRequestCount: 123,
+			},
+			TimeWindow: "1m",
+		}
+		rows = append(rows, row)
+	}
+
+	resp := pb.TopRoutesResponse{
+		Response: &pb.TopRoutesResponse_Routes{
+			Routes: &pb.RouteTable{
+				Rows: rows,
+			},
+		},
+	}
+
+	return resp
+}

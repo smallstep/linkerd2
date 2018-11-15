@@ -19,20 +19,16 @@ import (
 )
 
 type routesOptions struct {
-	namespace     string
-	timeWindow    string
+	statOptionsBase
 	fromNamespace string
 	fromResource  string
-	outputFormat  string
 }
 
 func newRoutesOptions() *routesOptions {
 	return &routesOptions{
-		namespace:     "default",
-		timeWindow:    "1m",
-		fromNamespace: "",
-		fromResource:  "",
-		outputFormat:  "",
+		statOptionsBase: *newStatOptionsBase(),
+		fromNamespace:   "",
+		fromResource:    "",
 	}
 }
 
@@ -96,34 +92,15 @@ func renderRouteStats(resp *pb.TopRoutesResponse, options *routesOptions) string
 	writeRouteStatsToBuffer(resp, w, options)
 	w.Flush()
 
-	var out string
-	switch options.outputFormat {
-	case "table", "":
-		// strip left padding on the first column
-		out = string(buffer.Bytes()[padding:])
-		out = strings.Replace(out, "\n"+strings.Repeat(" ", padding), "\n", -1)
-	case "json":
-		out = string(buffer.Bytes())
-	}
-
-	return out
-}
-
-type routeRow struct {
-	requestRate float64
-	successRate float64
-	tlsPercent  float64
-	latencyP50  uint64
-	latencyP95  uint64
-	latencyP99  uint64
+	return renderStats(buffer, &options.statOptionsBase)
 }
 
 func writeRouteStatsToBuffer(resp *pb.TopRoutesResponse, w *tabwriter.Writer, options *routesOptions) {
-	table := make(map[string]*routeRow)
+	table := make(map[string]*rowStats)
 
 	for _, r := range resp.GetRoutes().Rows {
 		if r.Stats != nil {
-			table[r.Route] = &routeRow{
+			table[r.Route] = &rowStats{
 				requestRate: util.GetRequestRate(r.Stats, r.TimeWindow),
 				successRate: util.GetSuccessRate(r.Stats),
 				tlsPercent:  util.GetPercentTls(r.Stats),
@@ -146,7 +123,7 @@ func writeRouteStatsToBuffer(resp *pb.TopRoutesResponse, w *tabwriter.Writer, op
 	}
 }
 
-func printRouteTable(stats map[string]*routeRow, w *tabwriter.Writer, options *routesOptions) {
+func printRouteTable(stats map[string]*rowStats, w *tabwriter.Writer, options *routesOptions) {
 	headers := []string{
 		"ROUTE",
 		"SUCCESS",
@@ -194,7 +171,7 @@ type jsonRouteStats struct {
 	Tls          *float64 `json:"tls"`
 }
 
-func printRouteJson(stats map[string]*routeRow, w *tabwriter.Writer) {
+func printRouteJson(stats map[string]*rowStats, w *tabwriter.Writer) {
 	// avoid nil initialization so that if there are not stats it gets marshalled as an empty array vs null
 	entries := []*jsonRouteStats{}
 	sortedRoutes := sortRoutesByRps(stats)
@@ -224,6 +201,11 @@ func printRouteJson(stats map[string]*routeRow, w *tabwriter.Writer) {
 }
 
 func buildTopRoutesRequest(service string, options *routesOptions) (*pb.TopRoutesRequest, error) {
+	err := options.validateOutputFormat()
+	if err != nil {
+		return nil, err
+	}
+
 	target, err := util.BuildResource(options.namespace, fmt.Sprintf("%s/%s", k8s.Service, service))
 	if err != nil {
 		return nil, err
@@ -250,7 +232,7 @@ func buildTopRoutesRequest(service string, options *routesOptions) (*pb.TopRoute
 	return util.BuildTopRoutesRequest(requestParams)
 }
 
-func sortRoutesByRps(stats map[string]*routeRow) []string {
+func sortRoutesByRps(stats map[string]*rowStats) []string {
 	var sortedRoutes []string
 	for key := range stats {
 		sortedRoutes = append(sortedRoutes, key)
@@ -259,23 +241,4 @@ func sortRoutesByRps(stats map[string]*routeRow) []string {
 		return stats[sortedRoutes[i]].requestRate > stats[sortedRoutes[j]].requestRate
 	})
 	return sortedRoutes
-}
-
-// validateNamespaceFlags performs additional validation for options when the target
-// resource type is a namespace.
-func (o *routesOptions) validateNamespaceFlags() error {
-	if o.fromNamespace != "" {
-		return fmt.Errorf("--from-namespace flag is incompatible with namespace resource type")
-	}
-
-	return nil
-}
-
-func (o *routesOptions) validateOutputFormat() error {
-	switch o.outputFormat {
-	case "table", "json", "":
-		return nil
-	default:
-		return fmt.Errorf("--output currently only supports table and json")
-	}
 }

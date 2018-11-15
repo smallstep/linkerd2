@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"io/ioutil"
 	"testing"
 
 	"github.com/linkerd/linkerd2/controller/api/public"
@@ -143,13 +142,6 @@ func testStatCall(exp paramsExp, t *testing.T) {
 
 	mockClient.StatSummaryResponseToReturn = &response
 
-	goldenFileBytes, err := ioutil.ReadFile(exp.file)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	expectedOutput := string(goldenFileBytes)
-
 	args := []string{"ns"}
 	reqs, err := buildStatSummaryRequests(args, exp.options)
 	if err != nil {
@@ -162,9 +154,7 @@ func testStatCall(exp paramsExp, t *testing.T) {
 	}
 
 	rows := respToRows(resp)
-	output := renderStats(rows, exp.options)
+	output := renderStatStats(rows, exp.options)
 
-	if output != expectedOutput {
-		t.Fatalf("Wrong output:\n expected: \n%s\n, got: \n%s", expectedOutput, output)
-	}
+	diffCompareFile(t, output, exp.file)
 }

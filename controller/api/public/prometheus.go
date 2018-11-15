@@ -127,3 +127,51 @@ func promDirectionLabels(direction string) model.LabelSet {
 func promResourceType(resource *pb.Resource) model.LabelName {
 	return model.LabelName(resource.Type)
 }
+
+func (s *grpcServer) getPrometheusMetrics(ctx context.Context, volumeQueryTemplate, latencyQueryTemplate, labels, timeWindow, groupBy string) ([]promResult, error) {
+	resultChan := make(chan promResult)
+
+	// kick off 4 asynchronous queries: 1 request volume + 3 latency
+	go func() {
+		// success/failure counts
+		requestsQuery := fmt.Sprintf(volumeQueryTemplate, labels, timeWindow, groupBy)
+		resultVector, err := s.queryProm(ctx, requestsQuery)
+
+		resultChan <- promResult{
+			prom: promRequests,
+			vec:  resultVector,
+			err:  err,
+		}
+	}()
+
+	for _, quantile := range []promType{promLatencyP50, promLatencyP95, promLatencyP99} {
+		go func(quantile promType) {
+			latencyQuery := fmt.Sprintf(latencyQueryTemplate, quantile, labels, timeWindow, groupBy)
+			latencyResult, err := s.queryProm(ctx, latencyQuery)
+
+			resultChan <- promResult{
+				prom: quantile,
+				vec:  latencyResult,
+				err:  err,
+			}
+		}(quantile)
+	}
+
+	// process results, receive one message per prometheus query type
+	var err error
+	results := []promResult{}
+	for i := 0; i < len(promTypes); i++ {
+		result := <-resultChan
+		if result.err != nil {
+			log.Errorf("queryProm failed with: %s", result.err)
+			err = result.err
+		} else {
+			results = append(results, result)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}

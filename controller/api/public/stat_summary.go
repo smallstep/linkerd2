@@ -2,14 +2,12 @@ package public
 
 import (
 	"context"
-	"fmt"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/linkerd/linkerd2/controller/api/util"
 	pb "github.com/linkerd/linkerd2/controller/gen/public"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/prometheus/common/model"
-	log "github.com/sirupsen/logrus"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -170,7 +168,7 @@ func (s *grpcServer) k8sResourceQuery(ctx context.Context, req *pb.StatSummaryRe
 		return resourceResult{res: nil, err: err}
 	}
 
-	requestMetrics, err := s.getPrometheusMetrics(ctx, req, req.TimeWindow)
+	requestMetrics, err := s.getStatMetrics(ctx, req, req.TimeWindow)
 	if err != nil {
 		return resourceResult{res: nil, err: err}
 	}
@@ -215,7 +213,7 @@ func (s *grpcServer) k8sResourceQuery(ctx context.Context, req *pb.StatSummaryRe
 }
 
 func (s *grpcServer) nonK8sResourceQuery(ctx context.Context, req *pb.StatSummaryRequest) resourceResult {
-	requestMetrics, err := s.getPrometheusMetrics(ctx, req, req.TimeWindow)
+	requestMetrics, err := s.getStatMetrics(ctx, req, req.TimeWindow)
 	if err != nil {
 		return resourceResult{res: nil, err: err}
 	}
@@ -302,48 +300,10 @@ func buildRequestLabels(req *pb.StatSummaryRequest) (labels model.LabelSet, labe
 	return
 }
 
-func (s *grpcServer) getPrometheusMetrics(ctx context.Context, req *pb.StatSummaryRequest, timeWindow string) (map[rKey]*pb.BasicStats, error) {
+func (s *grpcServer) getStatMetrics(ctx context.Context, req *pb.StatSummaryRequest, timeWindow string) (map[rKey]*pb.BasicStats, error) {
 	reqLabels, groupBy := buildRequestLabels(req)
-	resultChan := make(chan promResult)
+	results, err := s.getPrometheusMetrics(ctx, reqQuery, latencyQuantileQuery, reqLabels.String(), timeWindow, groupBy.String())
 
-	// kick off 4 asynchronous queries: 1 request volume + 3 latency
-	go func() {
-		// success/failure counts
-		requestsQuery := fmt.Sprintf(reqQuery, reqLabels, timeWindow, groupBy)
-		resultVector, err := s.queryProm(ctx, requestsQuery)
-
-		resultChan <- promResult{
-			prom: promRequests,
-			vec:  resultVector,
-			err:  err,
-		}
-	}()
-
-	for _, quantile := range []promType{promLatencyP50, promLatencyP95, promLatencyP99} {
-		go func(quantile promType) {
-			latencyQuery := fmt.Sprintf(latencyQuantileQuery, quantile, reqLabels, timeWindow, groupBy)
-			latencyResult, err := s.queryProm(ctx, latencyQuery)
-
-			resultChan <- promResult{
-				prom: quantile,
-				vec:  latencyResult,
-				err:  err,
-			}
-		}(quantile)
-	}
-
-	// process results, receive one message per prometheus query type
-	var err error
-	results := []promResult{}
-	for i := 0; i < len(promTypes); i++ {
-		result := <-resultChan
-		if result.err != nil {
-			log.Errorf("queryProm failed with: %s", result.err)
-			err = result.err
-		} else {
-			results = append(results, result)
-		}
-	}
 	if err != nil {
 		return nil, err
 	}

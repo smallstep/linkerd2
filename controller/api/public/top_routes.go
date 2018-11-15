@@ -8,7 +8,6 @@ import (
 	pb "github.com/linkerd/linkerd2/controller/gen/public"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/prometheus/common/model"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -33,10 +32,6 @@ func (s *grpcServer) TopRoutes(ctx context.Context, req *pb.TopRoutesRequest) (*
 	}
 
 	switch req.Outbound.(type) {
-	case *pb.TopRoutesRequest_ToResource:
-		if req.Outbound.(*pb.TopRoutesRequest_ToResource).ToResource.Type == k8s.All {
-			return topRoutesError(req, "resource type 'all' is not supported as a filter"), nil
-		}
 	case *pb.TopRoutesRequest_FromResource:
 		if req.Outbound.(*pb.TopRoutesRequest_FromResource).FromResource.Type == k8s.All {
 			return topRoutesError(req, "resource type 'all' is not supported as a filter"), nil
@@ -91,46 +86,9 @@ func (s *grpcServer) routeResourceQuery(ctx context.Context, req *pb.TopRoutesRe
 
 func (s *grpcServer) getRouteMetrics(ctx context.Context, req *pb.TopRoutesRequest, timeWindow string) (map[string]*pb.BasicStats, error) {
 	reqLabels := buildRouteLabels(req)
-	resultChan := make(chan promResult)
+	groupBy := "rt_route"
 
-	// kick off 4 asynchronous queries: 1 request volume + 3 latency
-	go func() {
-		// success/failure counts
-		requestsQuery := fmt.Sprintf(routeReqQuery, reqLabels, timeWindow)
-		resultVector, err := s.queryProm(ctx, requestsQuery)
-
-		resultChan <- promResult{
-			prom: promRequests,
-			vec:  resultVector,
-			err:  err,
-		}
-	}()
-
-	for _, quantile := range []promType{promLatencyP50, promLatencyP95, promLatencyP99} {
-		go func(quantile promType) {
-			latencyQuery := fmt.Sprintf(routeLatencyQuantileQuery, quantile, reqLabels, timeWindow)
-			latencyResult, err := s.queryProm(ctx, latencyQuery)
-
-			resultChan <- promResult{
-				prom: quantile,
-				vec:  latencyResult,
-				err:  err,
-			}
-		}(quantile)
-	}
-
-	// process results, receive one message per prometheus query type
-	var err error
-	results := []promResult{}
-	for i := 0; i < len(promTypes); i++ {
-		result := <-resultChan
-		if result.err != nil {
-			log.Errorf("queryProm failed with: %s", result.err)
-			err = result.err
-		} else {
-			results = append(results, result)
-		}
-	}
+	results, err := s.getPrometheusMetrics(ctx, routeReqQuery, routeLatencyQuantileQuery, reqLabels, timeWindow, groupBy)
 	if err != nil {
 		return nil, err
 	}

@@ -19,14 +19,12 @@ import (
 )
 
 type statOptions struct {
-	namespace     string
-	timeWindow    string
+	statOptionsBase
 	toNamespace   string
 	toResource    string
 	fromNamespace string
 	fromResource  string
 	allNamespaces bool
-	outputFormat  string
 }
 
 type indexedResults struct {
@@ -37,14 +35,12 @@ type indexedResults struct {
 
 func newStatOptions() *statOptions {
 	return &statOptions{
-		namespace:     "default",
-		timeWindow:    "1m",
-		toNamespace:   "",
-		toResource:    "",
-		fromNamespace: "",
-		fromResource:  "",
-		allNamespaces: false,
-		outputFormat:  "",
+		statOptionsBase: *newStatOptionsBase(),
+		toNamespace:     "",
+		toResource:      "",
+		fromNamespace:   "",
+		fromResource:    "",
+		allNamespaces:   false,
 	}
 }
 
@@ -148,7 +144,7 @@ If no resource name is specified, displays stats about all resources of the spec
 				}
 			}
 
-			output := renderStats(totalRows, options)
+			output := renderStatStats(totalRows, options)
 			_, err = fmt.Print(output)
 
 			return err
@@ -189,23 +185,13 @@ func requestStatsFromAPI(client pb.ApiClient, req *pb.StatSummaryRequest, option
 	return resp, nil
 }
 
-func renderStats(rows []*pb.StatTable_PodGroup_Row, options *statOptions) string {
+func renderStatStats(rows []*pb.StatTable_PodGroup_Row, options *statOptions) string {
 	var buffer bytes.Buffer
 	w := tabwriter.NewWriter(&buffer, 0, 0, padding, ' ', tabwriter.AlignRight)
 	writeStatsToBuffer(rows, w, options)
 	w.Flush()
 
-	var out string
-	switch options.outputFormat {
-	case "table", "":
-		// strip left padding on the first column
-		out = string(buffer.Bytes()[padding:])
-		out = strings.Replace(out, "\n"+strings.Repeat(" ", padding), "\n", -1)
-	case "json":
-		out = string(buffer.Bytes())
-	}
-
-	return out
+	return renderStats(buffer, &options.statOptionsBase)
 }
 
 const padding = 3
@@ -518,11 +504,7 @@ func (o *statOptions) validate(resourceType string) error {
 		}
 	}
 
-	if err := o.validateOutputFormat(); err != nil {
-		return err
-	}
-
-	return nil
+	return o.validateOutputFormat()
 }
 
 // validateConflictingFlags validates that the options do not contain mutually
@@ -557,13 +539,4 @@ func (o *statOptions) validateNamespaceFlags() error {
 	}
 
 	return nil
-}
-
-func (o *statOptions) validateOutputFormat() error {
-	switch o.outputFormat {
-	case "table", "json", "":
-		return nil
-	default:
-		return fmt.Errorf("--output currently only supports table and json")
-	}
 }

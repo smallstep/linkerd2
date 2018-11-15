@@ -47,3 +47,8 @@ func readOptionalTestFile(t *testing.T, fileName string) string {
 
 	return fileData
 }
+
+func diffCompareFile(t *testing.T, actual string, goldenFile string) {
+	expectedOutput := readOptionalTestFile(t, goldenFile)
+	diffCompare(t, actual, expectedOutput)
+}
