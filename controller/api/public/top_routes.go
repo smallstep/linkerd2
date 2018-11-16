@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	routeReqQuery             = "sum(increase(route_response_total%s[%s])) by (rt_route, classification, tls)"
-	routeLatencyQuantileQuery = "histogram_quantile(%s, sum(irate(route_response_latency_ms_bucket%s[%s])) by (le, rt_route))"
-	dstLabel                  = `dst=~"%s:(\\d+)?"`
+	routeReqQuery             = "sum(increase(route_response_total%s[%s])) by (%s, classification, tls)"
+	routeLatencyQuantileQuery = "histogram_quantile(%s, sum(irate(route_response_latency_ms_bucket%s[%s])) by (le, %s))"
+	dstLabel                  = `dst=~"%s(:\\d+)?"`
 )
 
 func (s *grpcServer) TopRoutes(ctx context.Context, req *pb.TopRoutesRequest) (*pb.TopRoutesResponse, error) {

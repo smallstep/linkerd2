@@ -25,7 +25,7 @@ func TestStat(t *testing.T) {
 			},
 			options: options,
 			resNs:   []string{"emojivoto1"},
-			file:    "testdata/stat_one_output.golden",
+			file:    "stat_one_output.golden",
 		}, t)
 	})
 
@@ -39,7 +39,7 @@ func TestStat(t *testing.T) {
 			},
 			options: options,
 			resNs:   []string{"emojivoto1"},
-			file:    "testdata/stat_one_output_json.golden",
+			file:    "stat_one_output_json.golden",
 		}, t)
 	})
 
@@ -54,7 +54,7 @@ func TestStat(t *testing.T) {
 			},
 			options: options,
 			resNs:   []string{"emojivoto1", "emojivoto2"},
-			file:    "testdata/stat_all_output.golden",
+			file:    "stat_all_output.golden",
 		}, t)
 	})
 
@@ -68,7 +68,7 @@ func TestStat(t *testing.T) {
 			},
 			options: options,
 			resNs:   []string{"emojivoto1", "emojivoto2"},
-			file:    "testdata/stat_all_output_json.golden",
+			file:    "stat_all_output_json.golden",
 		}, t)
 	})
 
