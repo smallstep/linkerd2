@@ -154,6 +154,7 @@ type proxyConfigOptions struct {
 
 const (
 	optionalTLS           = "optional"
+	stepTLS               = "step"
 	defaultDockerRegistry = "gcr.io/linkerd-io"
 )
 
@@ -210,15 +211,19 @@ func (options *proxyConfigOptions) validate() error {
 		}
 	}
 
-	if options.tls != "" && options.tls != optionalTLS {
-		return fmt.Errorf("--tls must be blank or set to \"%s\"", optionalTLS)
+	if options.tls != "" && options.tls != optionalTLS && options.tls != stepTLS {
+		return fmt.Errorf("--tls must be blank or set to \"[%s|%s]\"", optionalTLS, stepTLS)
 	}
 
 	return nil
 }
 
 func (options *proxyConfigOptions) enableTLS() bool {
-	return options.tls == optionalTLS
+	return options.tls == optionalTLS || options.tls == stepTLS
+}
+
+func (options *proxyConfigOptions) stepTLS() bool {
+	return options.tls == stepTLS
 }
 
 func (options *proxyConfigOptions) taggedProxyImage() string {

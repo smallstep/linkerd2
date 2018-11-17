@@ -216,7 +216,7 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 		Image:                    options.taggedProxyInitImage(),
 		ImagePullPolicy:          v1.PullPolicy(options.imagePullPolicy),
 		TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
-		Args: initArgs,
+		Args:                     initArgs,
 		SecurityContext: &v1.SecurityContext{
 			Capabilities: &v1.Capabilities{
 				Add: []v1.Capability{v1.Capability("NET_ADMIN")},
@@ -313,27 +313,43 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 	}
 
 	if options.enableTLS() {
-		yes := true
-
-		configMapVolume := v1.Volume{
-			Name: "linkerd-trust-anchors",
-			VolumeSource: v1.VolumeSource{
-				ConfigMap: &v1.ConfigMapVolumeSource{
-					LocalObjectReference: v1.LocalObjectReference{Name: k8s.TLSTrustAnchorConfigMapName},
-					Optional:             &yes,
+		var configMapVolume, secretVolume v1.Volume
+		if options.stepTLS() {
+			configMapVolume = v1.Volume{
+				Name: "step-linkerd-trust-anchors",
+				VolumeSource: v1.VolumeSource{
+					ConfigMap: &v1.ConfigMapVolumeSource{
+						LocalObjectReference: v1.LocalObjectReference{Name: "step-linkerd-ca-bundle"},
+					},
 				},
-			},
-		}
-		secretVolume := v1.Volume{
-			Name: "linkerd-secrets",
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
-					SecretName: identity.ToSecretName(),
-					Optional:   &yes,
+			}
+			secretVolume = v1.Volume{
+				Name: "step-linkerd-secrets",
+				VolumeSource: v1.VolumeSource{
+					EmptyDir: &v1.EmptyDirVolumeSource{},
 				},
-			},
+			}
+		} else {
+			yes := true
+			configMapVolume = v1.Volume{
+				Name: "linkerd-trust-anchors",
+				VolumeSource: v1.VolumeSource{
+					ConfigMap: &v1.ConfigMapVolumeSource{
+						LocalObjectReference: v1.LocalObjectReference{Name: k8s.TLSTrustAnchorConfigMapName},
+						Optional:             &yes,
+					},
+				},
+			}
+			secretVolume = v1.Volume{
+				Name: "linkerd-secrets",
+				VolumeSource: v1.VolumeSource{
+					Secret: &v1.SecretVolumeSource{
+						SecretName: identity.ToSecretName(),
+						Optional:   &yes,
+					},
+				},
+			}
 		}
-
 		base := "/var/linkerd-io"
 		configMapBase := base + "/trust-anchors"
 		secretBase := base + "/identity"
@@ -356,6 +372,37 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 		}
 
 		t.Volumes = append(t.Volumes, configMapVolume, secretVolume)
+
+		if options.stepTLS() {
+			stepSidecar := v1.Container{
+				Name:                     "step-renewer",
+				Image:                    "localhost:5000/step-renewer:latest",
+				TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
+				Env: []v1.EnvVar{
+					{Name: "STEP_CA_URL", Value: "https://ca.step"},
+					{Name: "STEP_ROOT", Value: configMapBase + "/root-ca.pem"},
+					{Name: "STEP_PASSWORD_FILE", Value: "/var/local/step/secrets/password"},
+					{Name: PodNamespaceEnvVarName, ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
+				},
+			}
+			stepSidecar.Env = append(stepSidecar.Env, tlsEnvVars...)
+			stepProvisionerPassword := v1.Volume{
+				Name: "step-provisioner-password",
+				VolumeSource: v1.VolumeSource{
+					Secret: &v1.SecretVolumeSource{
+						SecretName: "step-provisioner-password",
+					},
+				},
+			}
+			stepSidecar.VolumeMounts = []v1.VolumeMount{
+				{Name: configMapVolume.Name, MountPath: configMapBase, ReadOnly: false},
+				{Name: secretVolume.Name, MountPath: secretBase, ReadOnly: false},
+				{Name: stepProvisionerPassword.Name, MountPath: "/var/local/step/secrets", ReadOnly: true},
+			}
+
+			t.Containers = append(t.Containers, stepSidecar)
+			t.Volumes = append(t.Volumes, stepProvisionerPassword)
+		}
 	}
 
 	t.Containers = append(t.Containers, sidecar)
