@@ -379,7 +379,14 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 				Image:                    "localhost:5000/step-renewer:latest",
 				TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
 				Env: []v1.EnvVar{
-					{Name: "STEP_CA_URL", Value: "https://ca.step"},
+					{Name: "STEP_CA_URL", ValueFrom: &v1.EnvVarSource{
+						ConfigMapKeyRef: &v1.ConfigMapKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "step-ca-configuration",
+							},
+							Key: "step-ca-url",
+						},
+					}},
 					{Name: "STEP_ROOT", Value: configMapBase + "/root-ca.pem"},
 					{Name: "STEP_PASSWORD_FILE", Value: "/var/local/step/secrets/password"},
 					{Name: PodNamespaceEnvVarName, ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
