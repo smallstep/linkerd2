@@ -232,6 +232,11 @@ func render(config installConfig, w io.Writer, options *installOptions) error {
 	injectOptions := newInjectOptions()
 	injectOptions.proxyConfigOptions = options.proxyConfigOptions
 
+	// Do not enable yet step in linkerd configurations
+	if options.stepTLS() {
+		injectOptions.proxyConfigOptions.tls = optionalTLS
+	}
+
 	// Special case for linkerd-proxy running in the Prometheus pod.
 	injectOptions.proxyOutboundCapacity[config.PrometheusImage] = prometheusProxyOutboundCapacity
 
