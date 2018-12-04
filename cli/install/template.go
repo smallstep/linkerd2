@@ -1033,11 +1033,13 @@ spec:
           httpGet:
             path: /health
             port: 9000
+            scheme: HTTPS
           initialDelaySeconds: 10
         readinessProbe:
           httpGet:
             path: /health
             port: 9000
+            scheme: HTTPS
           failureThreshold: 7
         {{- if .EnableHA }}
         resources:
