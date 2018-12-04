@@ -67,6 +67,7 @@ type installOptions struct {
 	singleNamespace    bool
 	highAvailability   bool
 	*proxyConfigOptions
+	*stepConfigOptions
 }
 
 const (
@@ -83,6 +84,7 @@ func newInstallOptions() *installOptions {
 		singleNamespace:    false,
 		highAvailability:   false,
 		proxyConfigOptions: newProxyConfigOptions(),
+		stepConfigOptions:  newStepConfigOptions(),
 	}
 }
 
@@ -104,6 +106,7 @@ func newCmdInstall() *cobra.Command {
 	}
 
 	addProxyConfigFlags(cmd, options.proxyConfigOptions)
+	addStepConfigFlags(cmd, options.stepConfigOptions)
 	cmd.PersistentFlags().UintVar(&options.controllerReplicas, "controller-replicas", options.controllerReplicas, "Replicas of the controller to deploy")
 	cmd.PersistentFlags().StringVar(&options.controllerLogLevel, "controller-log-level", options.controllerLogLevel, "Log level for the controller and web components")
 	cmd.PersistentFlags().BoolVar(&options.proxyAutoInject, "proxy-auto-inject", options.proxyAutoInject, "Experimental: Enable proxy sidecar auto-injection webhook (default false)")
@@ -207,6 +210,13 @@ func render(config installConfig, w io.Writer, options *installOptions) error {
 			return err
 		}
 
+		if options.stepTLS() {
+			err = injectStepCAConfiguration(w, options)
+			if err != nil {
+				return err
+			}
+		}
+
 		if config.ProxyAutoInjectEnabled {
 			proxyInjectorTemplate, err := template.New("linkerd").Parse(install.ProxyInjectorTemplate)
 			if err != nil {
@@ -235,6 +245,10 @@ func (options *installOptions) validate() error {
 
 	if options.proxyAutoInject && options.singleNamespace {
 		return fmt.Errorf("The --proxy-auto-inject and --single-namespace flags cannot both be specified together")
+	}
+
+	if err := options.stepConfigOptions.validate(); err != nil {
+		return err
 	}
 
 	return options.proxyConfigOptions.validate()

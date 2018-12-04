@@ -987,3 +987,86 @@ data:
       secretName: "" # this value will be computed by the webhook
       optional: true
 `
+
+const StepCATemplate = `
+### Service Account Step CA ###
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: ca
+  namespace: {{.Namespace}}
+
+### CA ###
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: ca
+  namespace: {{.Namespace}}
+  labels:
+    service: {{.Namespace}}-ca
+  annotations:
+    {{.CreatedByAnnotation}}: {{.CliVersion}}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        service: {{.Namespace}}-ca
+      annotations:
+        {{.CreatedByAnnotation}}: {{.CliVersion}}
+    spec:
+      serviceAccount: ca
+      containers:
+      - name: ca
+        ports:
+        - name: admin-http
+          containerPort: 9000
+        image: {{.Image}}
+        imagePullPolicy: {{.ImagePullPolicy}}
+        args:
+        - "step-ca"
+        - "--password-file={{.PasswordFile}}"
+        - "{{.ConfigFile}}"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          failureThreshold: 7
+        {{- if .EnableHA }}
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        {{- end }}
+        volumeMounts:
+          - name: certificates
+            mountPath: /home/step/.step/secrets
+            readOnly: true
+          - name: config
+            mountPath: /home/step/.step/config
+            readOnly: true
+          - name: secrets
+            mountPath: /home/step/secrets
+            readOnly: true
+        securityContext:
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+      volumes:
+        - name: certificates
+          configMap:
+            name: ca-certificates
+        - name: config
+          configMap:
+            name: ca-config
+        - name: secrets
+          secret:
+            secretName: ca-certificate-password
+---
+`
