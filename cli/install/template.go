@@ -997,6 +997,24 @@ metadata:
   name: ca
   namespace: {{.Namespace}}
 
+### CA Service ###
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: ca
+  namespace: {{.Namespace}}
+  labels:
+    service: {{.Namespace}}-ca
+spec:
+  type: ClusterIP
+  ports:
+  - name: headless
+    port: 9000
+    targetPort: 9000
+  selector:
+    service: {{.Namespace}}-ca
+
 ### CA ###
 ---
 kind: Deployment
@@ -1020,9 +1038,6 @@ spec:
       serviceAccount: ca
       containers:
       - name: ca
-        ports:
-        - name: admin-http
-          containerPort: 9000
         image: {{.Image}}
         imagePullPolicy: {{.ImagePullPolicy}}
         args:
