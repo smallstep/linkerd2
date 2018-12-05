@@ -162,10 +162,10 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 	for _, o := range toMarshal {
 		b, err := yaml.Marshal(o)
 		if err != nil {
-			return fmt.Errorf("error marshaling namespace: %v", err)
+			return fmt.Errorf("error marshaling yaml: %v", err)
 		}
 		if _, err := out.Write(b); err != nil {
-			return fmt.Errorf("error writing namespace: %v", err)
+			return fmt.Errorf("error writing yaml: %v", err)
 		}
 		out.Write([]byte("---\n"))
 	}
@@ -181,4 +181,72 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 	}
 
 	return nil
+}
+
+func getStepRenewerTrustAnchorsVolume() v1.Volume {
+	return v1.Volume{
+		Name: "step-linkerd-trust-anchors",
+		VolumeSource: v1.VolumeSource{
+			ConfigMap: &v1.ConfigMapVolumeSource{
+				LocalObjectReference: v1.LocalObjectReference{Name: "step-linkerd-ca-bundle"},
+			},
+		},
+	}
+}
+
+func getStepRenewerSecretsVolume() v1.Volume {
+	return v1.Volume{
+		Name: "step-linkerd-secrets",
+		VolumeSource: v1.VolumeSource{
+			EmptyDir: &v1.EmptyDirVolumeSource{},
+		},
+	}
+}
+
+func injectStepRenewerSidecar(t *v1.PodSpec, identity k8s.TLSIdentity, options *injectOptions) {
+	base := "/var/linkerd-io"
+	configMapBase := base + "/trust-anchors"
+	secretBase := base + "/identity"
+
+	sidecar := v1.Container{
+		Name:                     "step-renewer",
+		Image:                    "smallstep/step-renewer:latest",
+		TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
+		Env: []v1.EnvVar{
+			{Name: "COMMON_NAME", Value: identity.ToDNSName()},
+			{Name: "TLS_CERTIFICATE", Value: secretBase + "/" + k8s.TLSCertFileName},
+			{Name: "TLS_PRIVATE_KEY", Value: secretBase + "/" + k8s.TLSPrivateKeyFileName},
+			{Name: PodNamespaceEnvVarName, ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
+			{Name: "STEP_ROOT", Value: configMapBase + "/root-ca.pem"},
+			{Name: "STEP_PASSWORD_FILE", Value: "/var/local/step/secrets/password"},
+			{Name: "STEP_RENEW_CRONTAB", Value: ""},
+			{Name: "STEP_CA_URL", ValueFrom: &v1.EnvVarSource{
+				ConfigMapKeyRef: &v1.ConfigMapKeySelector{
+					LocalObjectReference: v1.LocalObjectReference{
+						Name: "step-ca-configuration",
+					},
+					Key: "step-ca-url",
+				},
+			}},
+		},
+	}
+
+	configMapVolume := getStepRenewerTrustAnchorsVolume()
+	secretVolume := getStepRenewerSecretsVolume()
+	stepProvisionerPassword := v1.Volume{
+		Name: "step-provisioner-password",
+		VolumeSource: v1.VolumeSource{
+			Secret: &v1.SecretVolumeSource{
+				SecretName: "step-provisioner-password",
+			},
+		},
+	}
+	sidecar.VolumeMounts = []v1.VolumeMount{
+		{Name: configMapVolume.Name, MountPath: configMapBase, ReadOnly: false},
+		{Name: secretVolume.Name, MountPath: secretBase, ReadOnly: false},
+		{Name: stepProvisionerPassword.Name, MountPath: "/var/local/step/secrets", ReadOnly: true},
+	}
+
+	t.Containers = append(t.Containers, sidecar)
+	t.Volumes = append(t.Volumes, stepProvisionerPassword)
 }
