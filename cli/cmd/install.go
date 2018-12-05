@@ -252,8 +252,10 @@ func (options *installOptions) validate() error {
 		return fmt.Errorf("The --proxy-auto-inject and --single-namespace flags cannot both be specified together")
 	}
 
-	if err := options.stepConfigOptions.validate(); err != nil {
-		return err
+	if options.stepTLS() {
+		if err := options.stepConfigOptions.validate(); err != nil {
+			return err
+		}
 	}
 
 	return options.proxyConfigOptions.validate()
