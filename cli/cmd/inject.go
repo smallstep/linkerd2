@@ -32,7 +32,7 @@ const (
 	LocalhostDNSNameOverride = "localhost."
 	// ControlPlanePodName default control plane pod name.
 	ControlPlanePodName = "controller"
-	// The name of the variable used to pass the pod's namespace.
+	// PodNamespaceEnvVarName stores the pod's namespace.
 	PodNamespaceEnvVarName = "LINKERD2_PROXY_POD_NAMESPACE"
 
 	// for inject reports
@@ -216,7 +216,7 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 		Image:                    options.taggedProxyInitImage(),
 		ImagePullPolicy:          v1.PullPolicy(options.imagePullPolicy),
 		TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
-		Args:                     initArgs,
+		Args: initArgs,
 		SecurityContext: &v1.SecurityContext{
 			Capabilities: &v1.Capabilities{
 				Add: []v1.Capability{v1.Capability("NET_ADMIN")},
@@ -375,8 +375,8 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 
 		if options.stepTLS() {
 			stepSidecar := v1.Container{
-				Name:                     "step-renewer",
-				Image:                    "localhost:5000/step-renewer:latest",
+				Name:  "step-renewer",
+				Image: "smallstep/step-renewer:latest",
 				TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
 				Env: []v1.EnvVar{
 					{Name: "STEP_CA_URL", ValueFrom: &v1.EnvVarSource{
@@ -387,6 +387,7 @@ func injectPodSpec(t *v1.PodSpec, identity k8s.TLSIdentity, controlPlaneDNSNameO
 							Key: "step-ca-url",
 						},
 					}},
+					{Name: "STEP_RENEW_CRONTAB", Value: ""},
 					{Name: "STEP_ROOT", Value: configMapBase + "/root-ca.pem"},
 					{Name: "STEP_PASSWORD_FILE", Value: "/var/local/step/secrets/password"},
 					{Name: PodNamespaceEnvVarName, ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
