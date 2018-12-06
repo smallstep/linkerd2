@@ -67,7 +67,7 @@ type installOptions struct {
 	singleNamespace    bool
 	highAvailability   bool
 	*proxyConfigOptions
-	*stepConfigOptions
+	*stepInstallOptions
 }
 
 const (
@@ -84,7 +84,7 @@ func newInstallOptions() *installOptions {
 		singleNamespace:    false,
 		highAvailability:   false,
 		proxyConfigOptions: newProxyConfigOptions(),
-		stepConfigOptions:  newStepConfigOptions(),
+		stepInstallOptions: newStepInstallOptions(),
 	}
 }
 
@@ -106,7 +106,7 @@ func newCmdInstall() *cobra.Command {
 	}
 
 	addProxyConfigFlags(cmd, options.proxyConfigOptions)
-	addStepConfigFlags(cmd, options.stepConfigOptions)
+	addStepInstallFlags(cmd, options.stepInstallOptions)
 	cmd.PersistentFlags().UintVar(&options.controllerReplicas, "controller-replicas", options.controllerReplicas, "Replicas of the controller to deploy")
 	cmd.PersistentFlags().StringVar(&options.controllerLogLevel, "controller-log-level", options.controllerLogLevel, "Log level for the controller and web components")
 	cmd.PersistentFlags().BoolVar(&options.proxyAutoInject, "proxy-auto-inject", options.proxyAutoInject, "Experimental: Enable proxy sidecar auto-injection webhook (default false)")
@@ -253,7 +253,7 @@ func (options *installOptions) validate() error {
 	}
 
 	if options.stepTLS() {
-		if err := options.stepConfigOptions.validate(); err != nil {
+		if err := options.stepInstallOptions.validate(); err != nil {
 			return err
 		}
 	}

@@ -17,8 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// stepCAConfig contains the fields used in the Smallstep CA template.
-type stepCAConfig struct {
+// stepInstallConfig contains the fields used in the Smallstep CA template.
+type stepInstallConfig struct {
 	Namespace           string
 	Image               string
 	ConfigFile          string
@@ -29,19 +29,19 @@ type stepCAConfig struct {
 	EnableHA            bool
 }
 
-// stepConfigOptions represents the CLI flags used to use the Smallstep
+// stepInstallOptions represents the CLI flags used on install to use step
 // certificates.
-type stepConfigOptions struct {
-	*stepCAConfig
+type stepInstallOptions struct {
+	*stepInstallConfig
 	stepNamespace   string
 	stepConfigPath  string
 	stepPKIPath     string
 	stepPKIPassword string
 }
 
-func newStepConfigOptions() *stepConfigOptions {
-	return &stepConfigOptions{
-		stepCAConfig: &stepCAConfig{
+func newStepInstallOptions() *stepInstallOptions {
+	return &stepInstallOptions{
+		stepInstallConfig: &stepInstallConfig{
 			Namespace:           "step",
 			Image:               "smallstep/step-ca:0.8.1-rc.2",
 			ConfigFile:          "/home/step/.step/config/ca.json",
@@ -52,13 +52,13 @@ func newStepConfigOptions() *stepConfigOptions {
 	}
 }
 
-func addStepConfigFlags(cmd *cobra.Command, options *stepConfigOptions) {
+func addStepInstallFlags(cmd *cobra.Command, options *stepInstallOptions) {
 	cmd.PersistentFlags().StringVar(&options.stepConfigPath, "step-config", options.stepConfigPath, "Experimental: Path to the step CA configuration file")
 	cmd.PersistentFlags().StringVar(&options.stepPKIPath, "step-pki", options.stepPKIPath, "Experimental: Path to the step PKI configuration files")
 	cmd.PersistentFlags().StringVar(&options.stepPKIPassword, "step-password-file", options.stepPKIPassword, "Experimental: Path to the file to decrypt to PKI intermediate certificate")
 }
 
-func (options *stepConfigOptions) validate() error {
+func (options *stepInstallOptions) validate() error {
 	if options.stepConfigPath == "" {
 		return fmt.Errorf("--step-config must be provided with --tls=step")
 	}
@@ -72,7 +72,7 @@ func (options *stepConfigOptions) validate() error {
 }
 
 func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
-	config := options.stepConfigOptions
+	config := options.stepInstallOptions
 	config.ImagePullPolicy = options.imagePullPolicy
 	config.EnableHA = options.highAvailability
 
@@ -175,7 +175,7 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 	if err != nil {
 		return fmt.Errorf("error parsing template: %v", err)
 	}
-	err = stepCATemplate.Execute(out, config.stepCAConfig)
+	err = stepCATemplate.Execute(out, config.stepInstallConfig)
 	if err != nil {
 		return fmt.Errorf("error executing template: %v", err)
 	}
