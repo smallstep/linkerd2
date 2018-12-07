@@ -2,15 +2,18 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"path/filepath"
 	"text/template"
 	"unicode"
 
 	"github.com/ghodss/yaml"
 	"github.com/linkerd/linkerd2/cli/install"
+	"github.com/linkerd/linkerd2/controller/step"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/spf13/cobra"
 	"k8s.io/api/core/v1"
@@ -33,10 +36,40 @@ type stepInstallConfig struct {
 // certificates.
 type stepInstallOptions struct {
 	*stepInstallConfig
-	stepNamespace   string
-	stepConfigPath  string
-	stepPKIPath     string
-	stepPKIPassword string
+	stepNamespace       string
+	stepConfigPath      string
+	stepPKIPath         string
+	stepPKIPassword     string
+	provisionerPassword string
+}
+
+type stepCaConfig struct {
+	Root     string   `json:"root"`
+	Crt      string   `json:"crt"`
+	Address  string   `json:"address"`
+	DNSNames []string `json:"dnsNames"`
+	caURL    string
+}
+
+func (c *stepCaConfig) UnmarshalJSON(data []byte) error {
+	type unmarshalType *stepCaConfig
+	if err := json.Unmarshal(data, unmarshalType(c)); err != nil {
+		return fmt.Errorf("error unmarshalling json: %v", err)
+	}
+	// Exract caURL
+	if len(c.DNSNames) == 0 {
+		return fmt.Errorf("error parsing json: dnsNames cannot be empty")
+	}
+	_, port, err := net.SplitHostPort(c.Address)
+	if err != nil {
+		return fmt.Errorf("error parsing address: %s", err)
+	}
+	if port == "443" {
+		c.caURL = fmt.Sprintf("https://%s", c.DNSNames[0])
+	} else {
+		c.caURL = fmt.Sprintf("https://%s:%s", c.DNSNames[0], port)
+	}
+	return nil
 }
 
 func newStepInstallOptions() *stepInstallOptions {
@@ -55,7 +88,8 @@ func newStepInstallOptions() *stepInstallOptions {
 func addStepInstallFlags(cmd *cobra.Command, options *stepInstallOptions) {
 	cmd.PersistentFlags().StringVar(&options.stepConfigPath, "step-config", options.stepConfigPath, "Experimental: Path to the step CA configuration file")
 	cmd.PersistentFlags().StringVar(&options.stepPKIPath, "step-pki", options.stepPKIPath, "Experimental: Path to the step PKI configuration files")
-	cmd.PersistentFlags().StringVar(&options.stepPKIPassword, "step-password-file", options.stepPKIPassword, "Experimental: Path to the file to decrypt to PKI intermediate certificate")
+	cmd.PersistentFlags().StringVar(&options.stepPKIPassword, "step-pki-password", options.stepPKIPassword, "Experimental: Path to the file to decrypt the PKI intermediate certificate")
+	cmd.PersistentFlags().StringVar(&options.provisionerPassword, "step-provisioner-password", options.provisionerPassword, "Experimental: Path to the file to decrypt the CA provisioner")
 }
 
 func (options *stepInstallOptions) validate() error {
@@ -66,7 +100,10 @@ func (options *stepInstallOptions) validate() error {
 		return fmt.Errorf("--step-pki must be provided with --tls=step")
 	}
 	if options.stepPKIPassword == "" {
-		return fmt.Errorf("--step-password-file must be provided with --tls=step")
+		return fmt.Errorf("--step-pki-password must be provided with --tls=step")
+	}
+	if options.provisionerPassword == "" {
+		return fmt.Errorf("--step-provisioner-password must be provided with --tls=step")
 	}
 	return nil
 }
@@ -79,6 +116,17 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 	caConfigData, err := ioutil.ReadFile(config.stepConfigPath)
 	if err != nil {
 		return fmt.Errorf("error reading %s: %v", config.stepConfigPath, err)
+	}
+
+	var caConfigJSON stepCaConfig
+	if err := json.Unmarshal(caConfigData, &caConfigJSON); err != nil {
+		return fmt.Errorf("error unmarshalling %s: %v", config.stepConfigPath, err)
+	}
+
+	rootName := filepath.Base(caConfigJSON.Root)
+	crtName := filepath.Base(caConfigJSON.Crt)
+	controllerConfigData := map[string]string{
+		step.CAURLKey: caConfigJSON.caURL,
 	}
 
 	files, err := ioutil.ReadDir(config.stepPKIPath)
@@ -95,7 +143,26 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 				return fmt.Errorf("error reading %s: %v", path, err)
 			}
 			caCertificatesData[file.Name()] = string(data)
+
+			// Get root and intermediate
+			switch file.Name() {
+			case rootName:
+				controllerConfigData[step.RootCertificateKey] = string(data)
+			case crtName:
+				controllerConfigData[step.IntermediateCertificateKey] = string(data)
+			}
 		}
+	}
+
+	// validate controller config
+	if controllerConfigData[step.CAURLKey] == "" {
+		return fmt.Errorf("failed to create ca-url from %s", config.stepConfigPath)
+	}
+	if controllerConfigData[step.RootCertificateKey] == "" {
+		return fmt.Errorf("root certificate %s not found in %s", rootName, config.stepPKIPath)
+	}
+	if controllerConfigData[step.IntermediateCertificateKey] == "" {
+		return fmt.Errorf("intermediate certificate %s not found in %s", crtName, config.stepPKIPath)
 	}
 
 	password, err := ioutil.ReadFile(config.stepPKIPassword)
@@ -103,6 +170,12 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 		return fmt.Errorf("error reading %s: %v", config.stepPKIPassword, err)
 	}
 	password = bytes.TrimRightFunc(password, unicode.IsSpace)
+
+	provisionerPassword, err := ioutil.ReadFile(config.stepPKIPassword)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %v", config.provisionerPassword, err)
+	}
+	provisionerPassword = bytes.TrimRightFunc(provisionerPassword, unicode.IsSpace)
 
 	// Create namespace, configMaps and secrets
 	namespace := v1.Namespace{
@@ -155,10 +228,39 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 		},
 	}
 
+	// Create configuration and secrets for the controller
+	controllerConfig := v1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      step.ConfigControllerConfigMap,
+			Namespace: controlPlaneNamespace,
+		},
+		Data: controllerConfigData,
+	}
+
+	controllerSecrets := v1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      step.ConfigControllerSecrets,
+			Namespace: controlPlaneNamespace,
+		},
+		Data: map[string][]byte{
+			step.ProvisionerPasswordKey: provisionerPassword,
+		},
+	}
+
 	// Write namespace, configMaps and secrets
 	toMarshal := []interface{}{
 		namespace, caConfig, caCertificates, caCertificatePassword,
+		controllerConfig, controllerSecrets,
 	}
+	out.Write([]byte("---\n"))
 	for _, o := range toMarshal {
 		b, err := yaml.Marshal(o)
 		if err != nil {
@@ -179,6 +281,30 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 	if err != nil {
 		return fmt.Errorf("error executing template: %v", err)
 	}
+
+	// Write Step Configuration Pod
+	stepConfiguration, err := template.New("linkerd").Parse(step.Template)
+	if err != nil {
+		return fmt.Errorf("error parsing template: %v", err)
+	}
+	err = stepConfiguration.Execute(out, step.TemplateData{
+		Namespace:                controlPlaneNamespace,
+		ConfigMapName:            step.ConfigControllerConfigMap,
+		ControllerComponentLabel: k8s.ControllerComponentLabel,
+		ControllerImage:          fmt.Sprintf("%s/controller:%s", options.dockerRegistry, options.linkerdVersion),
+		ControllerLogLevel:       options.controllerLogLevel,
+		ImagePullPolicy:          options.imagePullPolicy,
+		CreatedByAnnotation:      k8s.CreatedByAnnotation,
+		CliVersion:               k8s.CreatedByAnnotationValue(),
+		SingleNamespace:          options.singleNamespace,
+		ProxyAutoInjectEnabled:   options.highAvailability,
+		EnableTLS:                options.enableTLS(),
+		EnableHA:                 options.highAvailability,
+	})
+	if err != nil {
+		return fmt.Errorf("error executing template: %v", err)
+	}
+	out.Write([]byte("---\n"))
 
 	return nil
 }

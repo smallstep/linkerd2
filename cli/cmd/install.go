@@ -211,7 +211,7 @@ func render(config installConfig, w io.Writer, options *installOptions) error {
 		}
 
 		if options.stepTLS() {
-			err = injectStepCAConfiguration(w, options)
+			err = injectStepCAConfiguration(buf, options)
 			if err != nil {
 				return err
 			}
