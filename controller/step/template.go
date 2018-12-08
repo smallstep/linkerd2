@@ -1,7 +1,9 @@
 package step
 
+// TemplateData is the data used in the step controller template.
 type TemplateData struct {
 	Namespace                string
+	ControlPlaneNamespace    string
 	ConfigMapName            string
 	ControllerComponentLabel string
 	ControllerImage          string
@@ -15,6 +17,7 @@ type TemplateData struct {
 	EnableHA                 bool
 }
 
+// Template is the kubernetes configuration for the step controller.
 const Template = `
 ### Step Controller Service Account ###
 ---
@@ -100,6 +103,7 @@ spec:
         args:
         - "step"
         - "-controller-namespace={{.Namespace}}"
+        - "-control-plane-namespace={{.ControlPlaneNamespace}}"
         - "-single-namespace={{.SingleNamespace}}"
         {{- if and .EnableTLS .ProxyAutoInjectEnabled }}
         - "-proxy-auto-inject={{ .ProxyAutoInjectEnabled }}"

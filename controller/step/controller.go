@@ -40,6 +40,18 @@ const (
 	// ProvisionerPasswordKey is the key used to store the default provisioner
 	// password.
 	ProvisionerPasswordKey = "provisioner-password"
+
+	// RenewerConfiguration is the configmap name with the step renewer
+	// configuration.
+	RenewerConfiguration = "step-renewer-configuration"
+
+	// RenewerCertificates is the configmap name where the public certificates
+	// will be stored.
+	RenewerCertificates = "step-renewer-certificates"
+
+	// RenewerSecrets is the secrets name where the provisioner secret will be
+	// stored.
+	RenewerSecrets = "step-renewer-secrets"
 )
 
 // Configuration errors returned on the ConfigController.
@@ -51,12 +63,13 @@ var (
 )
 
 type ConfigController struct {
-	namespace   string
-	k8sAPI      *k8s.API
-	syncHandler func(key string) error
-	caURL       string
-	password    []byte
-	certs       map[string]string
+	namespace             string
+	controlPlaneNamespace string
+	k8sAPI                *k8s.API
+	syncHandler           func(key string) error
+	caURL                 string
+	password              []byte
+	certs                 map[string]string
 	// The queue is keyed on a string. If the string doesn't contain any dots
 	// then it is a namespace name and the task is to create the CA bundle
 	// configmap in that namespace. Otherwise the string must be of the form
@@ -68,7 +81,7 @@ type ConfigController struct {
 // NewConfigController initializes a configuration controller reading configmaps
 // and secrets. The configuration controller will create and update the
 // configmaps and secrets used by the step renewers.
-func NewConfigController(controllerNamespace string, k8sAPI *k8s.API, proxyAutoInject bool) (*ConfigController, error) {
+func NewConfigController(controllerNamespace, controlPlaneNamespace string, k8sAPI *k8s.API, proxyAutoInject bool) (*ConfigController, error) {
 	// Read necessary configuration
 	cm, err := k8sAPI.Client.CoreV1().ConfigMaps(controllerNamespace).Get(ConfigControllerConfigMap, metav1.GetOptions{})
 	if err != nil {
@@ -105,10 +118,11 @@ func NewConfigController(controllerNamespace string, k8sAPI *k8s.API, proxyAutoI
 	}
 
 	c := &ConfigController{
-		namespace: controllerNamespace,
-		k8sAPI:    k8sAPI,
-		caURL:     caURL,
-		password:  password,
+		namespace:             controllerNamespace,
+		controlPlaneNamespace: controlPlaneNamespace,
+		k8sAPI:                k8sAPI,
+		caURL:                 caURL,
+		password:              password,
 		certs: map[string]string{
 			"root-ca.pem":       rootCert,
 			"trust-anchors.pem": intermediateCert,
@@ -191,7 +205,7 @@ func (c *ConfigController) syncNamespace(ns string) error {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "step-ca-configuration",
+			Name:      RenewerConfiguration,
 			Namespace: ns,
 		},
 		Data: map[string]string{
@@ -205,7 +219,7 @@ func (c *ConfigController) syncNamespace(ns string) error {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "step-linkerd-ca-bundle",
+			Name:      RenewerCertificates,
 			Namespace: ns,
 		},
 		Data: c.certs,
@@ -217,7 +231,7 @@ func (c *ConfigController) syncNamespace(ns string) error {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "step-provisioner-password",
+			Name:      RenewerSecrets,
 			Namespace: ns,
 		},
 		Data: map[string][]byte{
@@ -269,7 +283,7 @@ func (c *ConfigController) syncSecret(key string) error {
 
 func (c *ConfigController) handlePodAdd(obj interface{}) {
 	pod := obj.(*v1.Pod)
-	if pkgK8s.IsMeshed(pod, c.namespace) {
+	if pkgK8s.IsMeshed(pod, c.controlPlaneNamespace) {
 		log.Debugf("enqueuing update of CA bundle configmap in %s", pod.Namespace)
 		c.queue.Add(pod.Namespace)
 

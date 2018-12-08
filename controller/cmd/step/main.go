@@ -15,7 +15,8 @@ import (
 
 func main() {
 	metricsAddr := flag.String("metrics-addr", ":9997", "address to serve scrapable metrics on")
-	controllerNamespace := flag.String("controller-namespace", "step", "namespace in which step certificates is installed")
+	controllerNamespace := flag.String("controller-namespace", "step", "namespace in which the step controller is installed")
+	controlPlaneNamespace := flag.String("control-plane-namespace", "linkerd", "namespace in which linkerd is installed")
 	singleNamespace := flag.Bool("single-namespace", false, "only operate in the controller namespace")
 	kubeConfigPath := flag.String("kubeconfig", "", "path to kube config")
 	proxyAutoInject := flag.Bool("proxy-auto-inject", false, "if true, watch for the add and update events of mutating webhook configurations")
@@ -41,7 +42,7 @@ func main() {
 		k8sAPI = k8s.NewAPI(k8sClient, nil, restrictToNamespace, k8s.Pod, k8s.RS)
 	}
 
-	controller, err := step.NewConfigController(*controllerNamespace, k8sAPI, *proxyAutoInject)
+	controller, err := step.NewConfigController(*controllerNamespace, *controlPlaneNamespace, k8sAPI, *proxyAutoInject)
 	if err != nil {
 		log.Fatalf("failed to create step.ConfigController: %v", err)
 	}

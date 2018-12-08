@@ -236,7 +236,7 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      step.ConfigControllerConfigMap,
-			Namespace: controlPlaneNamespace,
+			Namespace: config.Namespace,
 		},
 		Data: controllerConfigData,
 	}
@@ -248,7 +248,7 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      step.ConfigControllerSecrets,
-			Namespace: controlPlaneNamespace,
+			Namespace: config.Namespace,
 		},
 		Data: map[string][]byte{
 			step.ProvisionerPasswordKey: provisionerPassword,
@@ -288,7 +288,8 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 		return fmt.Errorf("error parsing template: %v", err)
 	}
 	err = stepConfiguration.Execute(out, step.TemplateData{
-		Namespace:                controlPlaneNamespace,
+		Namespace:                config.Namespace,
+		ControlPlaneNamespace:    controlPlaneNamespace,
 		ConfigMapName:            step.ConfigControllerConfigMap,
 		ControllerComponentLabel: k8s.ControllerComponentLabel,
 		ControllerImage:          fmt.Sprintf("%s/controller:%s", options.dockerRegistry, options.linkerdVersion),
@@ -311,10 +312,12 @@ func injectStepCAConfiguration(out io.Writer, options *installOptions) error {
 
 func getStepRenewerTrustAnchorsVolume() v1.Volume {
 	return v1.Volume{
-		Name: "step-linkerd-trust-anchors",
+		Name: "step-renewer-linkerd-trust-anchors",
 		VolumeSource: v1.VolumeSource{
 			ConfigMap: &v1.ConfigMapVolumeSource{
-				LocalObjectReference: v1.LocalObjectReference{Name: "step-linkerd-ca-bundle"},
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: step.RenewerCertificates,
+				},
 			},
 		},
 	}
@@ -322,7 +325,7 @@ func getStepRenewerTrustAnchorsVolume() v1.Volume {
 
 func getStepRenewerSecretsVolume() v1.Volume {
 	return v1.Volume{
-		Name: "step-linkerd-secrets",
+		Name: "step-renewer-linkerd-secrets",
 		VolumeSource: v1.VolumeSource{
 			EmptyDir: &v1.EmptyDirVolumeSource{},
 		},
@@ -349,7 +352,7 @@ func injectStepRenewerSidecar(t *v1.PodSpec, identity k8s.TLSIdentity, options *
 			{Name: "STEP_CA_URL", ValueFrom: &v1.EnvVarSource{
 				ConfigMapKeyRef: &v1.ConfigMapKeySelector{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "step-ca-configuration",
+						Name: step.RenewerConfiguration,
 					},
 					Key: "step-ca-url",
 				},
@@ -360,10 +363,10 @@ func injectStepRenewerSidecar(t *v1.PodSpec, identity k8s.TLSIdentity, options *
 	configMapVolume := getStepRenewerTrustAnchorsVolume()
 	secretVolume := getStepRenewerSecretsVolume()
 	stepProvisionerPassword := v1.Volume{
-		Name: "step-provisioner-password",
+		Name: step.RenewerSecrets,
 		VolumeSource: v1.VolumeSource{
 			Secret: &v1.SecretVolumeSource{
-				SecretName: "step-provisioner-password",
+				SecretName: step.RenewerSecrets,
 			},
 		},
 	}
