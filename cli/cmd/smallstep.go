@@ -16,7 +16,7 @@ import (
 	"github.com/linkerd/linkerd2/controller/step"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/spf13/cobra"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -348,7 +348,8 @@ func injectStepRenewerSidecar(t *v1.PodSpec, identity k8s.TLSIdentity, options *
 			{Name: PodNamespaceEnvVarName, ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
 			{Name: "STEP_ROOT", Value: configMapBase + "/root-ca.pem"},
 			{Name: "STEP_PASSWORD_FILE", Value: "/var/local/step/secrets/password"},
-			{Name: "STEP_RENEW_CRONTAB", Value: ""},
+			{Name: "STEP_EXPIRES_IN", Value: ""},   // placeholder to set the step ca renew --expires-in flag
+			{Name: "STEP_RENEW_PERIOD", Value: ""}, // placeholder to set the step ca renew --renew-period flag
 			{Name: "STEP_CA_URL", ValueFrom: &v1.EnvVarSource{
 				ConfigMapKeyRef: &v1.ConfigMapKeySelector{
 					LocalObjectReference: v1.LocalObjectReference{
